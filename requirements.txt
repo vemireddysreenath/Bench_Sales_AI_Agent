@@ -2,6 +2,6 @@ playwright
 PyYAML
 pandas
 pdfplumber
+docx2txt
 requests
-sqlite3
 tqdm
