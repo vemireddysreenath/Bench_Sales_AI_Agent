@@ -20,7 +20,6 @@ pip install -r requirements.txt
 playwright install
 ```
 
-2. Update `data/config.yaml` with search keywords, locations, resume path and LLM URL.
 
 4. Run the agent:
 

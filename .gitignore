@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+
+# Playwright browsers and cache
+playwright/.local-browsers/
+playwright/.cache/
+**/playwright-downloads/
+
+# Environment and editor files
+.env
+*.env
+venv/
+.idea/
+.vscode/
+
+# Runtime data
+data/*
+!data/config.yaml
+
+# Logs and databases
+*.log
+data/*.db
+data/application_log.csv
+data/ambiguous_fields.yaml

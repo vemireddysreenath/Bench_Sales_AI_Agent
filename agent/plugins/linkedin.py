@@ -14,6 +14,24 @@ class LinkedinPlugin(PortalPlugin):
         self.config = config
         self.logger = logging.getLogger(__name__)
 
+    def _login(self, page) -> bool:
+        """Login to LinkedIn using credentials from config or environment."""
+        username = self.config.get("linkedin_username") or os.getenv("LINKEDIN_USERNAME")
+        password = self.config.get("linkedin_password") or os.getenv("LINKEDIN_PASSWORD")
+        if not username or not password:
+            self.logger.error("LinkedIn credentials not provided")
+            return False
+        try:
+            page.goto("https://www.linkedin.com/login")
+            page.fill('input[name="session_key"]', username)
+            page.fill('input[name="session_password"]', password)
+            page.click('button[type="submit"]')
+            page.wait_for_load_state("networkidle")
+            return True
+        except Exception as e:
+            self.logger.exception(f"LinkedIn login failed: {e}")
+            return False
+
     def search_jobs(self, keywords: List[str], locations: List[str]) -> List[Dict[str, Any]]:
         """Search LinkedIn Jobs and return minimal job metadata."""
         jobs: List[Dict[str, Any]] = []
@@ -21,6 +39,9 @@ class LinkedinPlugin(PortalPlugin):
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
+                if not self._login(page):
+                    browser.close()
+                    return jobs
                 page.goto("https://www.linkedin.com/jobs")
                 for keyword in keywords:
                     for location in locations:
@@ -70,6 +91,9 @@ class LinkedinPlugin(PortalPlugin):
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
+                if not self._login(page):
+                    browser.close()
+                    return False, "Login failed"
                 page.goto(job["url"])
                 page.wait_for_timeout(2000)
                 apply_btn = page.query_selector('button.jobs-apply-button')
@@ -78,6 +102,7 @@ class LinkedinPlugin(PortalPlugin):
                     return False, "No apply button"
                 apply_btn.click()
                 page.wait_for_timeout(2000)
+
                 form_fields = [el.get_attribute('name') for el in page.query_selector_all('input[name]')]
                 ambiguous = fill_form(page, form_fields, tailored_resume, self.config["llm_url"])
                 if ambiguous:
