@@ -1,0 +1,7 @@
+playwright
+PyYAML
+pandas
+pdfplumber
+requests
+sqlite3
+tqdm

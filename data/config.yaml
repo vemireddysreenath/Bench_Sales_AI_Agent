@@ -1,0 +1,10 @@
+keywords:
+  - "Python Developer"
+  - "AI Engineer"
+locations:
+  - "Remote"
+  - "United States"
+portals:
+  - "linkedin"
+resume_path: "data/resume.pdf"
+llm_url: "http://localhost:11434/api/generate"
