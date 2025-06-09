@@ -2,7 +2,6 @@
 from .base import PortalPlugin
 from ..form_filler import fill_form
 from playwright.sync_api import sync_playwright
-import os
 
 import logging
 from typing import Any, Dict, List, Tuple
@@ -103,12 +102,7 @@ class LinkedinPlugin(PortalPlugin):
                     return False, "No apply button"
                 apply_btn.click()
                 page.wait_for_timeout(2000)
-                upload = page.query_selector('input[type="file"]')
-                if upload:
-                    try:
-                        upload.set_input_files(resume_path)
-                    except Exception as e:
-                        self.logger.warning(f"Failed to upload resume: {e}")
+
                 form_fields = [el.get_attribute('name') for el in page.query_selector_all('input[name]')]
                 ambiguous = fill_form(page, form_fields, tailored_resume, self.config["llm_url"])
                 if ambiguous:
