@@ -8,3 +8,5 @@ portals:
   - "linkedin"
 resume_path: "data/resume.pdf"
 llm_url: "http://localhost:11434/api/generate"
+linkedin_username: "your_email@example.com"
+linkedin_password: "your_linkedin_password"

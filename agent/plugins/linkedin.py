@@ -1,75 +1,125 @@
+"""LinkedIn plugin implementing job search and application via Playwright."""
 from .base import PortalPlugin
+from ..form_filler import fill_form
 from playwright.sync_api import sync_playwright
-import time
+import os
+
 import logging
 from typing import Any, Dict, List, Tuple
 
-class LinkedInPlugin(PortalPlugin):
+
+class LinkedinPlugin(PortalPlugin):
+    """Simple automation for LinkedIn job search and apply."""
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
 
+    def _login(self, page) -> bool:
+        """Login to LinkedIn using credentials from config or environment."""
+        username = self.config.get("linkedin_username") or os.getenv("LINKEDIN_USERNAME")
+        password = self.config.get("linkedin_password") or os.getenv("LINKEDIN_PASSWORD")
+        if not username or not password:
+            self.logger.error("LinkedIn credentials not provided")
+            return False
+        try:
+            page.goto("https://www.linkedin.com/login")
+            page.fill('input[name="session_key"]', username)
+            page.fill('input[name="session_password"]', password)
+            page.click('button[type="submit"]')
+            page.wait_for_load_state("networkidle")
+            return True
+        except Exception as e:
+            self.logger.exception(f"LinkedIn login failed: {e}")
+            return False
+
     def search_jobs(self, keywords: List[str], locations: List[str]) -> List[Dict[str, Any]]:
-        jobs = []
+        """Search LinkedIn Jobs and return minimal job metadata."""
+        jobs: List[Dict[str, Any]] = []
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
+                if not self._login(page):
+                    browser.close()
+                    return jobs
                 page.goto("https://www.linkedin.com/jobs")
                 for keyword in keywords:
                     for location in locations:
                         page.fill('input[aria-label="Search jobs"]', keyword)
                         page.fill('input[aria-label="Search location"]', location)
                         page.click('button[aria-label="Search"]')
-                        time.sleep(3)
-                        job_cards = page.query_selector_all('ul.jobs-search__results-list li')
-                        for card in job_cards:
+                        page.wait_for_timeout(3000)
+                        cards = page.query_selector_all('ul.jobs-search__results-list li')
+                        for card in cards:
                             try:
-                                title = card.query_selector('h3').inner_text()
-                                company = card.query_selector('h4').inner_text()
-                                url = card.query_selector('a').get_attribute('href')
+                                title_el = card.query_selector('h3')
+                                company_el = card.query_selector('h4')
+                                link_el = card.query_selector('a')
+                                if not (title_el and company_el and link_el):
+                                    continue
+                                title = title_el.inner_text().strip()
+                                company = company_el.inner_text().strip()
+                                url = link_el.get_attribute('href')
                                 job_id = url.split('/')[-2]
                                 jobs.append({"id": job_id, "title": title, "company": company, "url": url})
                             except Exception as e:
-                                self.logger.warning(f"Failed to parse job card: {e}")
+                                self.logger.warning(f"Failed to parse card: {e}")
                 browser.close()
         except Exception as e:
-            self.logger.exception(f"Failed to search jobs: {e}")
+            self.logger.exception(f"LinkedIn search failure: {e}")
         return jobs
 
     def get_job_details(self, job: Dict[str, Any]) -> str:
+        """Return the full job description text."""
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
                 page.goto(job["url"])
-                time.sleep(2)
-                desc = page.query_selector('div.description__text').inner_text()
+                page.wait_for_timeout(2000)
+                desc_el = page.query_selector('div.description__text')
+                desc = desc_el.inner_text() if desc_el else ""
                 browser.close()
                 return desc
         except Exception as e:
-            self.logger.exception(f"Failed to get job details: {e}")
+            self.logger.exception(f"Failed to fetch job details: {e}")
             return ""
 
-    def apply_to_job(self, job: Dict[str, Any], resume: str, tailored_resume: str) -> Tuple[bool, str]:
+    def apply_to_job(self, job: Dict[str, Any], resume_path: str, tailored_resume: str) -> Tuple[bool, str]:
+        """Attempt to apply via Easy Apply. Returns success flag and reason."""
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
-                page.goto(job["url"])
-                time.sleep(2)
-                apply_btn = page.query_selector('button.jobs-apply-button')
-                if apply_btn:
-                    apply_btn.click()
-                    time.sleep(2)
-                    # Example: upload resume
-                    page.set_input_files('input[type="file"]', tailored_resume)
-                    # Handle multi-step forms, ambiguous fields, captcha, etc.
+                if not self._login(page):
                     browser.close()
-                    return True, "Applied"
-                else:
+                    return False, "Login failed"
+                page.goto(job["url"])
+                page.wait_for_timeout(2000)
+                apply_btn = page.query_selector('button.jobs-apply-button')
+                if not apply_btn:
                     browser.close()
                     return False, "No apply button"
+                apply_btn.click()
+                page.wait_for_timeout(2000)
+                upload = page.query_selector('input[type="file"]')
+                if upload:
+                    try:
+                        upload.set_input_files(resume_path)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to upload resume: {e}")
+                form_fields = [el.get_attribute('name') for el in page.query_selector_all('input[name]')]
+                ambiguous = fill_form(page, form_fields, tailored_resume, self.config["llm_url"])
+                if ambiguous:
+                    self.logger.info(f"Ambiguous fields for job {job['id']}: {ambiguous}")
+                # attempt to submit
+                submit_btn = page.query_selector('button[aria-label="Submit application"]')
+                if submit_btn:
+                    submit_btn.click()
+                    page.wait_for_timeout(2000)
+                browser.close()
+                return True, "Applied"
         except Exception as e:
-            self.logger.exception(f"Failed to apply to job: {e}")
+            self.logger.exception(f"Apply failed: {e}")
             return False, str(e)
